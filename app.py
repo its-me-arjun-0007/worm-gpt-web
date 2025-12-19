@@ -1,92 +1,91 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
-import json
 import os
-import hashlib
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from werkzeug.utils import secure_filename
+import sqlite3
 import requests
-import uuid
-from datetime import datetime
+import json
+import PyPDF2  # For PDF parsing (pip install PyPDF2)
 
 app = Flask(__name__)
-app.secret_key = "wormgpt_cyber_secret_key"  # Change this!
+app.secret_key = os.urandom(24)  # For session security
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Constants
-CONFIG_FILE = "wormgpt_config.json"
-USERS_FILE = "wormgpt_users.json"
-HISTORY_DIR = "mission_logs"
+# --- CONFIG (Migrated from your json) ---
+DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+# Ideally, load these from your existing json or a database
 
-if not os.path.exists(HISTORY_DIR):
-    os.makedirs(HISTORY_DIR)
+# --- HELPER: DATABASE ---
+def init_db():
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    # Create Users Table
+    c.execute('''CREATE TABLE IF NOT EXISTS users 
+                 (username TEXT PRIMARY KEY, password TEXT, role TEXT)''')
+    # Create API Keys Table
+    c.execute('''CREATE TABLE IF NOT EXISTS api_keys 
+                 (key TEXT)''')
+    conn.commit()
+    conn.close()
 
-# --- Helper Functions ---
-def load_config():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    return {"api_keys": [], "models": ["default"], "base_url": "https://openrouter.ai/api/v1"}
+# --- HELPER: FILE PARSING ---
+def extract_text_from_file(filepath):
+    """Extracts text from uploaded files to feed into the AI"""
+    ext = filepath.rsplit('.', 1)[1].lower()
+    content = ""
+    try:
+        if ext == 'txt' or ext == 'py' or ext == 'sh' or ext == 'md':
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+        elif ext == 'pdf':
+            with open(filepath, 'rb') as f:
+                reader = PyPDF2.PdfReader(f)
+                for page in reader.pages:
+                    content += page.extract_text()
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
+    return content
 
-def save_config(config):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
-
-# --- Routes ---
+# --- ROUTES ---
 
 @app.route('/')
-def index():
-    if 'user' in session:
-        return redirect(url_for('chat_interface'))
+def home():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('index.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        # IMPLEMENT YOUR HASH CHECK HERE (SHA256 like in your cli)
+        # For demo:
+        if username == "odiyan" and password == "admin": 
+            session['user'] = username
+            session['role'] = 'admin'
+            return redirect(url_for('home'))
+        return render_template('login.html', error="Access Denied")
     return render_template('login.html')
 
-@app.route('/login', methods=['POST'])
-def login():
-    username = request.form.get('username')
-    password = request.form.get('password')
-    
-    if not os.path.exists(USERS_FILE):
-        return "User DB missing", 500
-
-    with open(USERS_FILE, 'r') as f:
-        users = json.load(f)
-
-    if username in users:
-        input_hash = hashlib.sha256(password.encode()).hexdigest()
-        if input_hash == users[username]:
-            session['user'] = username
-            return redirect(url_for('chat_interface'))
-            
-    return render_template('login.html', error="ACCESS DENIED")
-
-@app.route('/chat')
-def chat_interface():
+@app.route('/api/chat', methods=['POST'])
+def chat():
     if 'user' not in session:
-        return redirect(url_for('index'))
-    return render_template('chat.html', user=session['user'])
-
-# --- API: Chat & Config ---
-
-@app.route('/api/message', methods=['POST'])
-def api_message():
-    if 'user' not in session: return jsonify({"error": "Unauthorized"}), 401
-
+        return jsonify({"error": "Unauthorized"}), 401
+    
     data = request.json
     user_message = data.get('message')
     history = data.get('history', [])
     
-    config = load_config()
-    
-    # Select active key/model safely
-    key_idx = config.get('active_key_index', 0)
-    api_key = config['api_keys'][key_idx] if config['api_keys'] else ""
-    
-    model_idx = config.get('active_model_index', 0)
-    model = config['models'][model_idx] if config['models'] else "default"
-
-    if not api_key:
-        return jsonify({"reply": "[SYSTEM ERROR]: No API Key configured. Check Settings."})
-
-    # Prepare Payload
+    # 1. Construct Message History
     messages = [{"role": "system", "content": "You are WormGPT."}] + history
     messages.append({"role": "user", "content": user_message})
-
+    
+    # 2. Call OpenRouter API (Reusing your logic)
+    # Fetch key from DB or config
+    api_key = "YOUR_OPENROUTER_KEY_HERE" 
+    
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -94,36 +93,107 @@ def api_message():
         "X-Title": "WormGPT Web"
     }
     
-    try:
-        resp = requests.post(
-            f"{config.get('base_url')}/chat/completions",
-            headers=headers,
-            json={"model": model, "messages": messages}
-        )
-        if resp.status_code == 200:
-            return jsonify({"reply": resp.json()['choices'][0]['message']['content']})
-        else:
-            return jsonify({"reply": f"[API ERROR {resp.status_code}]: {resp.text}"})
-    except Exception as e:
-        return jsonify({"reply": f"[CONNECTION ERROR]: {str(e)}"})
-
-@app.route('/api/config', methods=['GET', 'POST'])
-def api_config():
-    """Get or Update Configuration"""
-    if 'user' not in session: return jsonify({"error": "Unauthorized"}), 401
+    payload = {
+        "model": "kwaipilot/kat-coder-pro:free", # Or dynamic model
+        "messages": messages
+    }
     
-    if request.method == 'GET':
-        return jsonify(load_config())
+    try:
+        resp = requests.post(f"{DEFAULT_BASE_URL}/chat/completions", headers=headers, json=payload)
+        ai_reply = resp.json()['choices'][0]['message']['content']
+        return jsonify({"reply": ai_reply})
+    except Exception as e:
+        return jsonify({"reply": f"System Failure: {str(e)}"}), 500
+
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
         
-    if request.method == 'POST':
-        new_config = request.json
-        save_config(new_config)
-        return jsonify({"status": "updated"})
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+    
+    # Extract text content
+    extracted_text = extract_text_from_file(filepath)
+    
+    return jsonify({"filename": filename, "content": extracted_text})
 
-@app.route('/logout')
-def logout():
-    session.pop('user', None)
-    return redirect(url_for('index'))
+# --- ADMIN ROUTES ---
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+@app.route('/admin')
+def admin_panel():
+    # Security Check: Only allow 'admin' role
+    if 'user' not in session or session.get('role') != 'admin':
+        return redirect(url_for('login'))
+    
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    
+    # Fetch all users
+    c.execute("SELECT username, role FROM users")
+    users = c.fetchall()
+    
+    # Fetch all keys
+    c.execute("SELECT rowid, key FROM api_keys")
+    keys = c.fetchall()
+    
+    conn.close()
+    return render_template('admin.html', users=users, keys=keys)
+
+@app.route('/admin/add_user', methods=['POST'])
+def add_user():
+    if session.get('role') != 'admin': return redirect(url_for('login'))
+    
+    username = request.form['username']
+    password = request.form['password'] # In production, hash this!
+    role = request.form['role']
+    
+    try:
+        conn = sqlite3.connect('database.db')
+        c = conn.cursor()
+        c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", 
+                  (username, password, role))
+        conn.commit()
+        conn.close()
+    except:
+        pass # Handle duplicate user error silently or add flash message
+        
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/delete_user/<username>')
+def delete_user(username):
+    if session.get('role') != 'admin': return redirect(url_for('login'))
+    
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM users WHERE username = ?", (username,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/add_key', methods=['POST'])
+def add_key():
+    if session.get('role') != 'admin': return redirect(url_for('login'))
+    
+    new_key = request.form['api_key']
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO api_keys (key) VALUES (?)", (new_key,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/delete_key/<int:id>')
+def delete_key(id):
+    if session.get('role') != 'admin': return redirect(url_for('login'))
+    
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM api_keys WHERE rowid = ?", (id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('admin_panel'))
