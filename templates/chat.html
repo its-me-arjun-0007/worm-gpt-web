@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WormGPT Web // Uplink Established</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div style="border-bottom: 1px solid #333; padding: 10px; display: flex; justify-content: space-between;">
+            <span>STATUS: <span style="color: #00ff41;">CONNECTED</span></span>
+            <span>USER: {{ user }}</span>
+            <a href="/logout" style="color: red;">[DISCONNECT]</a>
+        </div>
+
+        <div id="chat-box">
+            <div class="message ai-msg">
+                [SYSTEM]: Secure uplink established. WormGPT Core Online. Waiting for input...
+            </div>
+        </div>
+
+        <div class="input-area">
+            <input type="file" id="file-input" style="display: none;">
+            <button onclick="document.getElementById('file-input').click()" style="margin-right: 10px;">[FILE]</button>
+            
+            <input type="text" id="user-input" placeholder="Enter command or message..." autocomplete="off">
+            <button onclick="sendMessage()">SEND</button>
+        </div>
+    </div>
+
+    <script>
+        let chatHistory = []; // Local history buffer
+
+        // File Reader Logic
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                const hiddenPrompt = `I am uploading a file named ${file.name}. Here is the content:\n\n${content}\n\nAnalyze this.`;
+                sendMessage(hiddenPrompt, `[FILE UPLOAD]: ${file.name}`);
+            };
+            reader.readAsText(file);
+        });
+
+        async function sendMessage(overrideText = null, displayLabel = null) {
+            const inputField = document.getElementById('user-input');
+            const text = overrideText || inputField.value;
+            const label = displayLabel || text;
+            
+            if (!text.trim()) return;
+
+            // Add User Message to UI
+            const chatBox = document.getElementById('chat-box');
+            chatBox.innerHTML += `<div class="message user-msg">${label}</div>`;
+            if (!overrideText) inputField.value = '';
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Send to Backend
+            try {
+                const response = await fetch('/api/message', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message: text, history: chatHistory })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    chatBox.innerHTML += `<div class="message ai-msg" style="color:red">[ERROR]: ${data.error}</div>`;
+                } else {
+                    // Render AI Response (Basic Markdown parsing can be added via JS lib if needed)
+                    chatBox.innerHTML += `<div class="message ai-msg">[WormGPT]: ${data.reply}</div>`;
+                    
+                    // Update History (keep it light)
+                    chatHistory.push({role: "user", content: text});
+                    chatHistory.push({role: "assistant", content: data.reply});
+                }
+            } catch (err) {
+                chatBox.innerHTML += `<div class="message ai-msg" style="color:red">[NET_ERR]: Connection Lost</div>`;
+            }
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // Allow 'Enter' key to send
+        document.getElementById('user-input').addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
