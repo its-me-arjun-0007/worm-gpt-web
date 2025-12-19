@@ -4,6 +4,7 @@ from werkzeug.utils import secure_filename
 import sqlite3
 import requests
 import json
+import hashlib
 import PyPDF2  # For PDF parsing (pip install PyPDF2)
 
 app = Flask(__name__)
@@ -59,14 +60,29 @@ def home():
 def login():
     if request.method == 'POST':
         username = request.form['username']
-        password = request.form['password']
-        # IMPLEMENT YOUR HASH CHECK HERE (SHA256 like in your cli)
-        # For demo:
-        if username == "odiyan" and password == "admin": 
-            session['user'] = username
-            session['role'] = 'admin'
-            return redirect(url_for('home'))
-        return render_template('login.html', error="Access Denied")
+        password_input = request.form['password']
+        
+        # HASH THE INPUT PASSWORD TO MATCH DATABASE
+        input_hash = hashlib.sha256(password_input.encode()).hexdigest()
+
+        conn = sqlite3.connect('database.db')
+        c = conn.cursor()
+        
+        # Fetch user securely
+        c.execute("SELECT password, role FROM users WHERE username = ?", (username,))
+        user = c.fetchone()
+        conn.close()
+
+        if user:
+            stored_hash = user[0]
+            role = user[1]
+            
+            if input_hash == stored_hash:
+                session['user'] = username
+                session['role'] = role
+                return redirect(url_for('home'))
+        
+        return render_template('login.html', error="Invalid Credentials")
     return render_template('login.html')
 
 @app.route('/api/chat', methods=['POST'])
@@ -77,6 +93,17 @@ def chat():
     data = request.json
     user_message = data.get('message')
     history = data.get('history', [])
+
+    # LOAD SYSTEM PROMPT DYNAMICALLY
+    system_prompt = "You are WormGPT."
+    if os.path.exists("system-prompt.txt"):
+        with open("system-prompt.txt", "r", encoding="utf-8") as f:
+            system_prompt = f.read()
+    
+    # Construct Message History
+    messages = [{"role": "system", "content": system_prompt}] + history
+    messages.append({"role": "user", "content": user_message})
+
     
     # 1. Construct Message History
     messages = [{"role": "system", "content": "You are WormGPT."}] + history
