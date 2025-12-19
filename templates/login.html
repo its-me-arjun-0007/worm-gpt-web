@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WormGPT // AUTH REQUIRED</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="login-panel">
+        <h1>ACCESS CONTROL</h1>
+        <p style="color: #555;">ENCRYPTION: SHA-256</p>
+        <hr style="border-color: #333;">
+        
+        {% if error %}
+        <p style="background: red; color: white;">{{ error }}</p>
+        {% endif %}
+
+        <form method="POST" action="/login">
+            <input type="text" name="username" class="login-input" placeholder="IDENTITY" required><br>
+            <input type="password" name="password" class="login-input" placeholder="ACCESS KEY" required><br>
+            <button type="submit" style="width: 100%; border-color: red; color: red;">DECRYPT</button>
+        </form>
+    </div>
+</body>
+</html>
