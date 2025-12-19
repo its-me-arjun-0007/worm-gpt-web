@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WormGPT // ROOT ACCESS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cyberpunk.css') }}">
+    <style>
+        /* Specific Admin Styles */
+        .admin-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px;
+            height: calc(100vh - 100px);
+            overflow-y: auto;
+        }
+
+        .panel-box {
+            border: 1px solid #333;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.1);
+        }
+
+        h2 { border-bottom: 2px solid #f00; padding-bottom: 10px; color: #fff; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+        th { color: #f00; }
+        td { color: #0f0; }
+
+        .btn-del {
+            background: #300;
+            color: #f00;
+            border: 1px solid #f00;
+            padding: 5px 10px;
+            font-size: 0.8em;
+        }
+        .btn-del:hover { background: #f00; color: #000; }
+
+        .form-row { display: flex; gap: 10px; margin-bottom: 20px; }
+        input, select {
+            background: #111;
+            border: 1px solid #333;
+            color: #fff;
+            padding: 10px;
+            font-family: 'Share Tech Mono', monospace;
+            flex: 1;
+        }
+        
+        @media (max-width: 768px) {
+            .admin-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="scanline"></div>
+
+    <nav style="padding: 20px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center;">
+        <h1 class="glitch" style="margin:0; color:#f00;">WORM-GPT // ADMIN CORE</h1>
+        <div>
+            <button onclick="window.location.href='/'">RETURN TO CONSOLE</button>
+        </div>
+    </nav>
+
+    <div class="admin-grid">
+        
+        <div class="panel-box">
+            <h2>>> OPERATIVE DATABASE</h2>
+            
+            <form action="{{ url_for('add_user') }}" method="POST">
+                <div class="form-row">
+                    <input type="text" name="username" placeholder="Codename" required>
+                    <input type="password" name="password" placeholder="Passkey" required>
+                </div>
+                <div class="form-row">
+                    <select name="role">
+                        <option value="user">Operative (User)</option>
+                        <option value="admin">Overlord (Admin)</option>
+                    </select>
+                    <button type="submit">INDUCT USER</button>
+                </div>
+            </form>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>CODENAME</th>
+                        <th>RANK</th>
+                        <th>ACTION</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user[0] }}</td>
+                        <td>{{ user[1] }}</td>
+                        <td>
+                            {% if user[0] != 'odiyan' %} 
+                            <a href="{{ url_for('delete_user', username=user[0]) }}" class="btn-del">TERMINATE</a>
+                            {% else %}
+                            <span style="color:#666">LOCKED</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="panel-box">
+            <h2>>> API KEY VAULT</h2>
+            
+            <form action="{{ url_for('add_key') }}" method="POST">
+                <div class="form-row">
+                    <input type="text" name="api_key" placeholder="sk-or-v1-..." required>
+                    <button type="submit">INJECT KEY</button>
+                </div>
+            </form>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>KEY FRAGMENT</th>
+                        <th>STATUS</th>
+                        <th>ACTION</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for key in keys %}
+                    <tr>
+                        <td>{{ key[1][:15] }}...</td>
+                        <td><span style="color: lime">ACTIVE</span></td>
+                        <td>
+                            <a href="{{ url_for('delete_key', id=key[0]) }}" class="btn-del">REVOKE</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</body>
+</html>
