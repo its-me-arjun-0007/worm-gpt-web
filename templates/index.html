@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WormGPT // COMMAND CONSOLE</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cyberpunk.css') }}">
+</head>
+<body>
+    <div class="scanline"></div>
+    
+    <nav class="sidebar">
+        <h1 class="glitch" data-text="WORM-GPT">WORM-GPT</h1>
+        <div class="status-box">
+            <p>SYSTEM: <span class="green">ONLINE</span></p>
+            <p>USER: <span class="red">{{ session['user'] }}</span></p>
+        </div>
+        <button onclick="window.location.href='/admin'">ADMIN PANEL</button>
+        <button class="logout" onclick="window.location.href='/logout'">DISCONNECT</button>
+    </nav>
+
+    <main class="chat-container">
+        <div id="chat-box" class="terminal-output">
+            <div class="msg system">
+                [SYSTEM] CONNECTION ESTABLISHED...<br>
+                [SYSTEM] ENCRYPTION: AES-256 enabled.<br>
+                [WormGPT] Ready for input.
+            </div>
+        </div>
+
+        <div class="input-area">
+            <input type="file" id="file-upload" hidden>
+            <button id="upload-btn" onclick="document.getElementById('file-upload').click()">📂</button>
+            <textarea id="user-input" placeholder="Enter command or payload..."></textarea>
+            <button id="send-btn">TRANSMIT</button>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
