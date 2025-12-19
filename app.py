@@ -3,28 +3,30 @@ import json
 import os
 import hashlib
 import requests
-import datetime
+import uuid
+from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = "wormgpt_secret_key_change_this"  # Change for security
+app.secret_key = "wormgpt_cyber_secret_key"  # Change this!
 
 # Constants
 CONFIG_FILE = "wormgpt_config.json"
 USERS_FILE = "wormgpt_users.json"
-PROMPT_FILE = "system-prompt.txt"
+HISTORY_DIR = "mission_logs"
 
-# --- Helper Functions (Reused) ---
+if not os.path.exists(HISTORY_DIR):
+    os.makedirs(HISTORY_DIR)
+
+# --- Helper Functions ---
 def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             return json.load(f)
     return {"api_keys": [], "models": ["default"], "base_url": "https://openrouter.ai/api/v1"}
 
-def get_system_prompt():
-    if os.path.exists(PROMPT_FILE):
-        with open(PROMPT_FILE, "r") as f:
-            return f.read()
-    return "You are a helpful AI."
+def save_config(config):
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=2)
 
 # --- Routes ---
 
@@ -46,7 +48,6 @@ def login():
         users = json.load(f)
 
     if username in users:
-        # Hash the input password to compare
         input_hash = hashlib.sha256(password.encode()).hexdigest()
         if input_hash == users[username]:
             session['user'] = username
@@ -60,24 +61,32 @@ def chat_interface():
         return redirect(url_for('index'))
     return render_template('chat.html', user=session['user'])
 
+# --- API: Chat & Config ---
+
 @app.route('/api/message', methods=['POST'])
 def api_message():
-    if 'user' not in session:
-        return jsonify({"error": "Unauthorized"}), 401
+    if 'user' not in session: return jsonify({"error": "Unauthorized"}), 401
 
     data = request.json
     user_message = data.get('message')
     history = data.get('history', [])
     
     config = load_config()
-    api_key = config['api_keys'][config.get('active_key_index', 0)]
-    model = config['models'][config.get('active_model_index', 0)]
     
-    # Construct full conversation
-    messages = [{"role": "system", "content": get_system_prompt()}] + history
+    # Select active key/model safely
+    key_idx = config.get('active_key_index', 0)
+    api_key = config['api_keys'][key_idx] if config['api_keys'] else ""
+    
+    model_idx = config.get('active_model_index', 0)
+    model = config['models'][model_idx] if config['models'] else "default"
+
+    if not api_key:
+        return jsonify({"reply": "[SYSTEM ERROR]: No API Key configured. Check Settings."})
+
+    # Prepare Payload
+    messages = [{"role": "system", "content": "You are WormGPT."}] + history
     messages.append({"role": "user", "content": user_message})
 
-    # API Call
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -85,28 +94,31 @@ def api_message():
         "X-Title": "WormGPT Web"
     }
     
-    payload = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": 4000
-    }
-    
     try:
         resp = requests.post(
-            f"{config['base_url']}/chat/completions",
+            f"{config.get('base_url')}/chat/completions",
             headers=headers,
-            json=payload
+            json={"model": model, "messages": messages}
         )
-        resp_json = resp.json()
-        
-        if 'choices' in resp_json:
-            ai_text = resp_json['choices'][0]['message']['content']
-            return jsonify({"reply": ai_text})
+        if resp.status_code == 200:
+            return jsonify({"reply": resp.json()['choices'][0]['message']['content']})
         else:
-            return jsonify({"error": f"API Error: {resp.text}"})
-            
+            return jsonify({"reply": f"[API ERROR {resp.status_code}]: {resp.text}"})
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"reply": f"[CONNECTION ERROR]: {str(e)}"})
+
+@app.route('/api/config', methods=['GET', 'POST'])
+def api_config():
+    """Get or Update Configuration"""
+    if 'user' not in session: return jsonify({"error": "Unauthorized"}), 401
+    
+    if request.method == 'GET':
+        return jsonify(load_config())
+        
+    if request.method == 'POST':
+        new_config = request.json
+        save_config(new_config)
+        return jsonify({"status": "updated"})
 
 @app.route('/logout')
 def logout():
@@ -114,6 +126,4 @@ def logout():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    # SSL context='adhoc' provides generic HTTPS for local testing
-    # Requires: pip install pyopenssl
-    app.run(host='0.0.0.0', port=5000, debug=True) 
+    app.run(host='0.0.0.0', port=5000, debug=True)
